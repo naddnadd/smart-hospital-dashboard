@@ -61,12 +61,25 @@ def build_html() -> str:
   }
 
   function measure() {
-    // Setelah CSS fix di atas, scrollHeight sudah murni tinggi konten,
-    // tidak lagi terikat ke min-height:100vh.
-    return Math.max(
-      document.documentElement.scrollHeight,
-      document.body ? document.body.scrollHeight : 0
-    );
+    if (!document.body) return 0;
+    // Tepi bawah paling jauh dari elemen level-atas yang benar-benar terlihat
+    // (bukan scrollHeight, yang bisa kebawa elemen overflow/absolute yang
+    // sebetulnya tidak menambah tinggi visual halaman).
+    let maxBottom = 0;
+    Array.prototype.forEach.call(document.body.children, function (el) {
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.position === 'fixed') return;
+      const bottom = el.getBoundingClientRect().bottom;
+      if (bottom > maxBottom) maxBottom = bottom;
+    });
+    return Math.ceil(maxBottom || document.body.getBoundingClientRect().bottom || 0);
+  }
+
+  function applyHeight(frame, h) {
+    frame.style.height = h + 'px';
+    frame.setAttribute('height', h);
+    const wrapper = frame.parentElement;
+    if (wrapper) wrapper.style.height = h + 'px';
   }
 
   function resize() {
@@ -75,11 +88,17 @@ def build_html() -> str:
     const h = measure();
     if (h && h !== frame._lastHeight) {
       frame._lastHeight = h;
-      frame.style.height = h + 'px';
-      frame.setAttribute('height', h);
-      const wrapper = frame.parentElement;
-      if (wrapper) wrapper.style.height = h + 'px';
+      applyHeight(frame, h);
     }
+
+    // Jalur cadangan (tidak mengganggu jika tidak didengarkan): berguna kalau
+    // suatu saat dashboard ini di-embed lewat Custom Component resmi.
+    try {
+      window.parent.postMessage(
+        { isStreamlitMessage: true, type: 'streamlit:setFrameHeight', height: h },
+        '*'
+      );
+    } catch (e) {}
   }
 
   window.addEventListener('load', resize);
@@ -143,3 +162,4 @@ st.markdown(
 )
 
 components.html(html_content, height=800, scrolling=False)
+
